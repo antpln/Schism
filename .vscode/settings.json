@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "s2_mmu.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "enabled"
+}
