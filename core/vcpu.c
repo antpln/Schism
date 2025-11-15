@@ -1,11 +1,94 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include "s2_mmu.h"
 #include "vcpu.h"
 #include <stddef.h>
 
+// Forward declarations to avoid missing uart_pl011.h dependency.
+void console_puts(const char *s);
+void console_hex64(uint64_t v);
+
 extern void vcpu_switch_asm(trapframe_t *tf);
+void world_switch(vcpu_t *from, vcpu_t *to);
 
 trapframe_t *current_trapframe = NULL;
+
+#define VCPU_SCHED_MAX 8
+static vcpu_t* sched_runqueue[VCPU_SCHED_MAX];
+static size_t sched_len;
+static size_t sched_idx;
+static vcpu_t* sched_current;
+
+static int sched_find_slot(vcpu_t* vcpu)
+{
+    for (size_t i = 0; i < sched_len; ++i)
+        if (sched_runqueue[i] == vcpu)
+            return (int)i;
+    return -1;
+}
+
+void vcpu_scheduler_register(vcpu_t* vcpu)
+{
+    if (!vcpu || sched_len >= VCPU_SCHED_MAX)
+        return;
+    if (sched_find_slot(vcpu) >= 0)
+        return;
+    sched_runqueue[sched_len++] = vcpu;
+    if (!sched_current)
+    {
+        sched_current = vcpu;
+        sched_idx = sched_len - 1;
+    }
+}
+
+void vcpu_scheduler_set_current(vcpu_t* vcpu)
+{
+    if (!vcpu)
+        return;
+    int slot = sched_find_slot(vcpu);
+    if (slot < 0 && sched_len < VCPU_SCHED_MAX)
+    {
+        sched_runqueue[sched_len] = vcpu;
+        slot = (int)sched_len;
+        sched_len++;
+    }
+    if (slot >= 0)
+    {
+        sched_current = vcpu;
+        sched_idx = (size_t)slot;
+    }
+}
+
+vcpu_t* vcpu_scheduler_current(void)
+{
+    return sched_current;
+}
+
+bool vcpu_scheduler_yield(void)
+{
+    if (sched_len <= 1 || !sched_current)
+        return false;
+
+    size_t next = (sched_idx + 1) % sched_len;
+    vcpu_t* target = sched_runqueue[next];
+    if (!target || target == sched_current)
+        return false;
+
+    vcpu_t* prev = sched_current;
+    sched_current = target;
+    sched_idx = next;
+
+    world_switch(prev, target);
+    return true;
+}
+
+void vcpu_run(vcpu_t* vcpu)
+{
+    if (!vcpu)
+        return;
+    vcpu_scheduler_set_current(vcpu);
+    world_switch(NULL, vcpu);
+}
 
 static void save_fp(vcpu_t *vcpu)
 {
@@ -144,8 +227,12 @@ static void restore_pauth(vcpu_t *vcpu)
 #define ICH_LR_SYSREG_13 "S3_4_C12_C13_5"
 #define ICH_LR_SYSREG_14 "S3_4_C12_C13_6"
 #define ICH_LR_SYSREG_15 "S3_4_C12_C13_7"
+#define ICH_VTR_SYSREG   "S3_4_C12_C11_1"
 #define ICH_VMCR_SYSREG    "S3_4_C12_C11_7"
 #define ICH_AP0R0_SYSREG   "S3_4_C12_C8_0"
+
+#define VGIC_LR_CAPACITY \
+    (sizeof(((vcpu_arch_t *)0)->vgic.lrs) / sizeof(((vcpu_arch_t *)0)->vgic.lrs[0]))
 
 #define SAVE_VGIC_LR_N(n) \
     asm volatile("mrs %0, " ICH_LR_SYSREG(n) : "=r"(vcpu->arch.vgic.lrs[n]))
@@ -153,27 +240,57 @@ static void restore_pauth(vcpu_t *vcpu)
 #define RESTORE_VGIC_LR_N(n) \
     asm volatile("msr " ICH_LR_SYSREG(n) ", %0" : : "r"(vcpu->arch.vgic.lrs[n]))
 
+#define SAVE_VGIC_LR_IF(n, count) \
+    do { if ((count) > (n)) { SAVE_VGIC_LR_N(n); } } while (0)
+
+#define RESTORE_VGIC_LR_IF(n, count) \
+    do { if ((count) > (n)) { RESTORE_VGIC_LR_N(n); } } while (0)
+
+static size_t vgic_detect_lr_count(void)
+{
+    uint64_t vtr;
+    asm volatile("mrs %0, " ICH_VTR_SYSREG : "=r"(vtr));
+    size_t count = (size_t)((vtr & 0xfu) + 1u);
+    if (count > VGIC_LR_CAPACITY)
+        count = VGIC_LR_CAPACITY;
+    return count;
+}
+
+static size_t vgic_lr_count(void)
+{
+    static size_t cached;
+    if (!cached)
+    {
+        cached = vgic_detect_lr_count();
+        if (!cached)
+            cached = 1; // hardware must implement >=1, but guard anyway
+    }
+    return cached;
+}
+
 static void save_vgic(vcpu_t *vcpu)
 {
     if (!vcpu)
         return;
 
-    SAVE_VGIC_LR_N(0);
-    SAVE_VGIC_LR_N(1);
-    SAVE_VGIC_LR_N(2);
-    SAVE_VGIC_LR_N(3);
-    SAVE_VGIC_LR_N(4);
-    SAVE_VGIC_LR_N(5);
-    SAVE_VGIC_LR_N(6);
-    SAVE_VGIC_LR_N(7);
-    SAVE_VGIC_LR_N(8);
-    SAVE_VGIC_LR_N(9);
-    SAVE_VGIC_LR_N(10);
-    SAVE_VGIC_LR_N(11);
-    SAVE_VGIC_LR_N(12);
-    SAVE_VGIC_LR_N(13);
-    SAVE_VGIC_LR_N(14);
-    SAVE_VGIC_LR_N(15);
+    size_t lr_count = vgic_lr_count();
+
+    SAVE_VGIC_LR_IF(0, lr_count);
+    SAVE_VGIC_LR_IF(1, lr_count);
+    SAVE_VGIC_LR_IF(2, lr_count);
+    SAVE_VGIC_LR_IF(3, lr_count);
+    SAVE_VGIC_LR_IF(4, lr_count);
+    SAVE_VGIC_LR_IF(5, lr_count);
+    SAVE_VGIC_LR_IF(6, lr_count);
+    SAVE_VGIC_LR_IF(7, lr_count);
+    SAVE_VGIC_LR_IF(8, lr_count);
+    SAVE_VGIC_LR_IF(9, lr_count);
+    SAVE_VGIC_LR_IF(10, lr_count);
+    SAVE_VGIC_LR_IF(11, lr_count);
+    SAVE_VGIC_LR_IF(12, lr_count);
+    SAVE_VGIC_LR_IF(13, lr_count);
+    SAVE_VGIC_LR_IF(14, lr_count);
+    SAVE_VGIC_LR_IF(15, lr_count);
 
     uint64_t tmp;
     asm volatile("mrs %0, " ICH_VMCR_SYSREG : "=r"(tmp)); // Read VMCR (Virtualization Miscellaneous Control Register)
@@ -187,22 +304,24 @@ static void restore_vgic(vcpu_t *vcpu)
     if (!vcpu)
         return;
 
-    RESTORE_VGIC_LR_N(0);
-    RESTORE_VGIC_LR_N(1);
-    RESTORE_VGIC_LR_N(2);
-    RESTORE_VGIC_LR_N(3);
-    RESTORE_VGIC_LR_N(4);
-    RESTORE_VGIC_LR_N(5);
-    RESTORE_VGIC_LR_N(6);
-    RESTORE_VGIC_LR_N(7);
-    RESTORE_VGIC_LR_N(8);
-    RESTORE_VGIC_LR_N(9);
-    RESTORE_VGIC_LR_N(10);
-    RESTORE_VGIC_LR_N(11);
-    RESTORE_VGIC_LR_N(12);
-    RESTORE_VGIC_LR_N(13);
-    RESTORE_VGIC_LR_N(14);
-    RESTORE_VGIC_LR_N(15);
+    size_t lr_count = vgic_lr_count();
+
+    RESTORE_VGIC_LR_IF(0, lr_count);
+    RESTORE_VGIC_LR_IF(1, lr_count);
+    RESTORE_VGIC_LR_IF(2, lr_count);
+    RESTORE_VGIC_LR_IF(3, lr_count);
+    RESTORE_VGIC_LR_IF(4, lr_count);
+    RESTORE_VGIC_LR_IF(5, lr_count);
+    RESTORE_VGIC_LR_IF(6, lr_count);
+    RESTORE_VGIC_LR_IF(7, lr_count);
+    RESTORE_VGIC_LR_IF(8, lr_count);
+    RESTORE_VGIC_LR_IF(9, lr_count);
+    RESTORE_VGIC_LR_IF(10, lr_count);
+    RESTORE_VGIC_LR_IF(11, lr_count);
+    RESTORE_VGIC_LR_IF(12, lr_count);
+    RESTORE_VGIC_LR_IF(13, lr_count);
+    RESTORE_VGIC_LR_IF(14, lr_count);
+    RESTORE_VGIC_LR_IF(15, lr_count);
 
     asm volatile("msr " ICH_VMCR_SYSREG ", %0" : : "r"((uint64_t)vcpu->arch.vgic.vmcr)); // Restore VMCR
     asm volatile("msr " ICH_AP0R0_SYSREG ", %0" : : "r"((uint64_t)vcpu->arch.vgic.apr)); // Restore APR
@@ -236,10 +355,16 @@ void world_switch(vcpu_t *from, vcpu_t *to)
     restore_sve(to);
     restore_fp(to);
 
-    current_trapframe = &to->arch.tf; // mark target frame for capture on next exit
-    vcpu_switch_asm(&to->arch.tf); // restores EL1 regs + GPRs and eret
+    asm volatile("msr VBAR_EL1, %0" :: "r"(guest_el1_vectors) : "memory");
 
+    current_trapframe = &to->arch.tf; // mark target frame for capture on next exit
+    console_puts("Switching to VCPU ");
+    console_hex64(to->vcpu_id);
+    console_puts("\n");
+
+    vcpu_switch_asm(&to->arch.tf); // restores EL1 regs + GPRs and eret
     // Re-enable interrupts after switch
     asm volatile("msr daifclr, #2"); // Re-enable IRQs
     asm volatile("isb");
+
 }

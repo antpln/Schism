@@ -1,0 +1,15 @@
+#ifndef GUEST_LAYOUT_H
+#define GUEST_LAYOUT_H
+
+#define GUEST_SHARED_BASE        0x41000000ull
+#define GUEST_SHARED_STRIDE      0x00001000ull
+#define GUEST_SHARED_SLOT_COUNT  12
+
+#define GUEST_WORK_BASE          0x42000000ull
+#define GUEST_WORK_SIZE          0x00001000ull
+#define GUEST_WORK_STRIDE        0x00002000ull
+
+#define GUEST_VUART_BASE         0x4F000000ull
+#define GUEST_VUART_SIZE         0x00001000ull
+
+#endif /* GUEST_LAYOUT_H */

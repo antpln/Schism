@@ -1,5 +1,6 @@
 #include "s2_mmu.h"
 #include "types.h"
+#include "platform.h"
 
 #define S2_PT_ENTRIES   512
 #define S2_PAGE_SIZE    0x1000ull

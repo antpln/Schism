@@ -1,5 +1,5 @@
+#include <stdbool.h>
 #include "types.h"
-
 
 // This structure holds the CPU state for a virtual CPU (VCPU) in the hypervisor.
 typedef struct trapframe
@@ -55,3 +55,11 @@ typedef struct vcpu
 } vcpu_t;
 
 extern trapframe_t *current_trapframe;
+
+void vcpu_scheduler_register(vcpu_t* vcpu);
+void vcpu_scheduler_set_current(vcpu_t* vcpu);
+vcpu_t* vcpu_scheduler_current(void);
+bool vcpu_scheduler_yield(void);
+void vcpu_run(vcpu_t* vcpu);
+
+extern void guest_el1_vectors(void);

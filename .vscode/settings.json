@@ -1,6 +1,7 @@
 {
     "files.associations": {
-        "s2_mmu.h": "c"
+        "s2_mmu.h": "c",
+        "stddef.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

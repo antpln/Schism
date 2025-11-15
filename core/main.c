@@ -1,7 +1,10 @@
 #include "types.h"
+#include <stddef.h>
 #include "platform.h"
 #include "el2_mmu.h"
 #include "s2_mmu.h"
+#include "vcpu.h"
+#include "guest_stubs.h"
 
 extern void console_init(void);
 extern void console_puts(const char*);
@@ -21,6 +24,28 @@ static void bss_clear(void){
 }
 
 extern void el1_start(void);
+
+static vcpu_t vcpu_pool[2];
+
+static void memclr(void* ptr, size_t bytes)
+{
+    u8* p = (u8*)ptr;
+    while (bytes--)
+        *p++ = 0;
+}
+
+static void vcpu_init_slot(vcpu_t* vcpu, int id, u64 entry, u64 stack, u64 vttbr_snapshot)
+{
+    memclr(vcpu, sizeof(*vcpu));
+    vcpu->arch.tf.elr_el1 = entry;
+    vcpu->arch.tf.sp_el1 = stack;
+    vcpu->arch.tf.regs[0] = (u64)id;
+    const u64 SPSR_EL1H = 0x5ull | (0xFull << 6);
+    vcpu->arch.tf.spsr_el1 = SPSR_EL1H;
+    vcpu->arch.vttbr_el2 = vttbr_snapshot;
+    vcpu->arch.cntvoff_el2 = 0;
+    vcpu->vcpu_id = id;
+}
 
 void el2_main(void){
     bss_clear();
@@ -62,8 +87,16 @@ void el2_main(void){
     s2_program_regs_and_enable();
     console_puts("EL2: Stage-2 MMU enabled.\n");
 
-    enter_el1_at(el1_start, 0x40080000ull);
-    console_puts("EL2: Transitioning to EL1...\n");
+    uint64_t vttbr_snapshot;
+    asm volatile("mrs %0, VTTBR_EL2" : "=r"(vttbr_snapshot));
 
-    for(;;) asm volatile("wfi");
+    vcpu_init_slot(&vcpu_pool[0], 0, (u64)guest_counter_os, 0x40080000ull, vttbr_snapshot);
+    vcpu_init_slot(&vcpu_pool[1], 1, (u64)guest_memwalk_os, 0x400A0000ull, vttbr_snapshot);
+
+    vcpu_scheduler_register(&vcpu_pool[0]);
+    vcpu_scheduler_register(&vcpu_pool[1]);
+    vcpu_scheduler_set_current(&vcpu_pool[0]);
+
+    console_puts("EL2: Launching initial VCPU...\n");
+    vcpu_run(&vcpu_pool[0]);
 }

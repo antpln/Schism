@@ -11,7 +11,7 @@ LDFLAGS := -T linker.ld -nostdlib
 
 # --- Project structure -------------------------------------------------------
 BUILD_DIR := build
-SRC_DIRS  := arch/arm64 core drivers
+SRC_DIRS  := arch/arm64 core drivers guests
 EXCLUDE  :=
 
 # --- Auto-discovery of sources ----------------------------------------------

@@ -1,9 +1,68 @@
 #include <stdint.h>
+#include "vcpu.h"
+#include "guest_api.h"
 
 extern void console_puts(const char*);
 extern void console_hex64(uint64_t);
 
+static bool handle_guest_task_report(uint64_t elr)
+{
+    vcpu_t *current = vcpu_scheduler_current();
+    if (!current)
+        return false;
+
+    uint64_t next = elr + 4;
+    asm volatile("msr ELR_EL2, %0" :: "r"(next));
+    current->arch.tf.elr_el1 = next;
+
+    uint64_t ptr = current->arch.tf.regs[1];
+    const struct guest_task_result *res = (const struct guest_task_result *)ptr;
+    if (!res)
+        return true;
+
+    console_puts("[guest");
+    char suffix[3] = { '0' + (char)current->vcpu_id, ']', '\0' };
+    console_puts(suffix);
+    console_puts(" ");
+    console_puts(res->desc);
+    console_puts(" data0=");
+    console_hex64(res->data0);
+    console_puts(" data1=");
+    console_hex64(res->data1);
+    console_puts("\n");
+    vcpu_scheduler_yield();
+    return true;
+}
+
+static bool handle_guest_hvc(uint64_t esr, uint64_t elr)
+{
+    const uint64_t imm16 = esr & 0xFFFF;
+    if (imm16 == 0x60)
+        return handle_guest_task_report(elr);
+    return false;
+}
+
 void el2_exception_common(uint64_t esr, uint64_t elr, uint64_t spsr, uint64_t far, uint64_t code) {
+    uint64_t ec = (esr >> 26) & 0x3F; // Exception Class
+
+    if (ec == 0x01) {
+        console_puts("EL2: WFI/WFE from guest detected, yielding...\n");
+        uint64_t next = elr + 4; // skip WFI/WFE
+        asm volatile("msr ELR_EL2, %0" :: "r"(next)); // Advance ELR_EL2
+
+        vcpu_t* current = vcpu_scheduler_current();
+        if (current)
+            current->arch.tf.elr_el1 = next;
+
+        if (!vcpu_scheduler_yield())
+            return; // No other VCPU ready; resume the same guest
+
+        return; // world_switch should not return, but keep compiler happy
+    }
+
+    if (ec == 0x16 && handle_guest_hvc(esr, elr))
+        return;
+
     console_puts("\n=== EL2 Exception ===\n");
     console_puts("ESR: "); console_hex64(esr); console_puts("\n");
     console_puts("ELR: "); console_hex64(elr); console_puts("\n");
@@ -12,7 +71,6 @@ void el2_exception_common(uint64_t esr, uint64_t elr, uint64_t spsr, uint64_t fa
     console_puts("Code: "); console_hex64(code); console_puts("\n");
     console_puts("====================\n");
 
-    uint64_t ec = (esr >> 26) & 0x3F; // Exception Class
     console_puts("Exception Class (EC): "); console_hex64(ec); console_puts("\n");
 
     // AArch64 ESR_ELx EC:
@@ -67,9 +125,5 @@ void el2_exception_common(uint64_t esr, uint64_t elr, uint64_t spsr, uint64_t fa
         }
 
     }
-    if (ec == 0x01) {
-        console_puts("WFI or WFE instruction execution at EL2 detected.\n");
-    }
-
     for(;;) asm volatile("wfi"); // hang
 }
