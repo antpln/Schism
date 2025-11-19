@@ -52,6 +52,7 @@ typedef struct vcpu
     int vcpu_id;   // VCPU identifier within the VM
     void (*kresume)(struct vcpu*); // Kernel resume function pointer
     u64 kresume_arg0, kresume_arg1; // Arguments for kresume
+    bool request_yield; // Flag to request a yield after a trap
 } vcpu_t;
 
 extern trapframe_t *current_trapframe;
@@ -61,5 +62,6 @@ void vcpu_scheduler_set_current(vcpu_t* vcpu);
 vcpu_t* vcpu_scheduler_current(void);
 bool vcpu_scheduler_yield(void);
 void vcpu_run(vcpu_t* vcpu);
+void world_switch(vcpu_t *from, vcpu_t *to);
 
 extern void guest_el1_vectors(void);

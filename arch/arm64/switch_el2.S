@@ -1,7 +1,22 @@
 .global vcpu_switch_asm
 .type vcpu_switch_asm, %function
 vcpu_switch_asm:
-	// x0: pointer to trapframe_t
+	// x0: pointer to trapframe_t (guest state destination/source)
+
+	// Save host callee-saved registers x19-x30 and SP to host_saved_area
+	// so the EL2 vector handler can restore them and return to C.
+	adrp x2, host_saved_area
+	add x2, x2, :lo12:host_saved_area
+	stp x19, x20, [x2, #0]
+	stp x21, x22, [x2, #16]
+	stp x23, x24, [x2, #32]
+	stp x25, x26, [x2, #48]
+	stp x27, x28, [x2, #64]
+	stp x29, x30, [x2, #80]
+	mov x3, sp
+	str x3, [x2, #96]
+
+	// Restore guest EL1 stack pointer, ELR_EL2 and SPSR_EL2 from trapframe
 	ldr x1, [x0, #(8 * 31)]        // load SP_EL1 snapshot
 	msr SP_EL1, x1               // restore SP_EL1
 	ldr x1, [x0, #(8 * 32)]        // load ELR for guest resume
@@ -10,6 +25,7 @@ vcpu_switch_asm:
 	msr SPSR_EL2, x1    // restore SPSR_EL2
 	isb
 
+	// Restore guest general-purpose registers x1..x30 from trapframe
 	ldp x1, x2, [x0, #(8 * 1)]        // restore general-purpose registers
 	ldp x3, x4, [x0, #(8 * 3)]
 	ldp x5, x6, [x0, #(8 * 5)]

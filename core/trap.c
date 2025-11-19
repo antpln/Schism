@@ -7,13 +7,10 @@ extern void console_hex64(uint64_t);
 
 static bool handle_guest_task_report(uint64_t elr)
 {
+    (void)elr;
     vcpu_t *current = vcpu_scheduler_current();
     if (!current)
         return false;
-
-    uint64_t next = elr + 4;
-    asm volatile("msr ELR_EL2, %0" :: "r"(next));
-    current->arch.tf.elr_el1 = next;
 
     uint64_t ptr = current->arch.tf.regs[1];
     const struct guest_task_result *res = (const struct guest_task_result *)ptr;
@@ -30,7 +27,6 @@ static bool handle_guest_task_report(uint64_t elr)
     console_puts(" data1=");
     console_hex64(res->data1);
     console_puts("\n");
-    vcpu_scheduler_yield();
     return true;
 }
 
@@ -39,6 +35,18 @@ static bool handle_guest_hvc(uint64_t esr, uint64_t elr)
     const uint64_t imm16 = esr & 0xFFFF;
     if (imm16 == 0x60)
         return handle_guest_task_report(elr);
+    if (imm16 == 0x63) {
+        vcpu_t *current = vcpu_scheduler_current();
+        console_puts("EL2: guest synchronous exception report\n");
+        if (current) {
+            uint64_t guest_esr = current->arch.tf.regs[0];
+            uint64_t guest_elr = current->arch.tf.regs[1];
+            console_puts("  guest ESR_EL1: "); console_hex64(guest_esr); console_puts("\n");
+            console_puts("  guest ELR_EL1: "); console_hex64(guest_elr); console_puts("\n");
+        }
+        for (;;)
+            asm volatile("wfi");
+    }
     return false;
 }
 
@@ -51,13 +59,12 @@ void el2_exception_common(uint64_t esr, uint64_t elr, uint64_t spsr, uint64_t fa
         asm volatile("msr ELR_EL2, %0" :: "r"(next)); // Advance ELR_EL2
 
         vcpu_t* current = vcpu_scheduler_current();
-        if (current)
+        if (current) {
             current->arch.tf.elr_el1 = next;
+            current->request_yield = true;
+        }
 
-        if (!vcpu_scheduler_yield())
-            return; // No other VCPU ready; resume the same guest
-
-        return; // world_switch should not return, but keep compiler happy
+        return;
     }
 
     if (ec == 0x16 && handle_guest_hvc(esr, elr))

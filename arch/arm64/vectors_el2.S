@@ -4,6 +4,8 @@
 .extern current_trapframe
 el2_vectors:
 
+.extern host_saved_area
+
 .macro SLOT label, code // define a vector slot
   .align 7
   .global \label
@@ -57,7 +59,20 @@ el2_vectors:
     mrs x3, far_el2 // read fault address register
     mov x4, #\code // pass code identifying the exception type
     bl el2_exception_common
-    eret
+
+    // After the C handler returns, restore host callee-saved registers
+    // and SP from host_saved_area and return to the caller in EL2 C code.
+    adrp x2, host_saved_area
+    add x2, x2, :lo12:host_saved_area
+    ldp x19, x20, [x2, #0]
+    ldp x21, x22, [x2, #16]
+    ldp x23, x24, [x2, #32]
+    ldp x25, x26, [x2, #48]
+    ldp x27, x28, [x2, #64]
+    ldp x29, x30, [x2, #80]
+    ldr x1, [x2, #96]
+    mov sp, x1
+    ret
 .endm
 
 SLOT el2_sync_sp0,   0x00

@@ -46,7 +46,7 @@ void guest_memwalk_os(u64 guest_id)
 
         struct guest_task_result result;
         guest_task_memwalk(guest_id, &result);
-        //guest_task_report(guest_id, &result);
+        guest_task_report(guest_id, &result);
         
         seed += 0x111111111ull;
         guest_delay(200);

@@ -35,7 +35,7 @@ void guest_counter_os(u64 guest_id)
         guest_log_value(COUNTER_SLOT_COUNTER, result.data0);
         guest_log_value(COUNTER_SLOT_ITER, iteration);
 
-        //guest_task_report(guest_id, &result);
+        guest_task_report(guest_id, &result);
 
         iteration++;
         guest_delay(10000);

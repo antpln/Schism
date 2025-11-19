@@ -13,6 +13,11 @@ void world_switch(vcpu_t *from, vcpu_t *to);
 
 trapframe_t *current_trapframe = NULL;
 
+// Area where the host (EL2) callee-saved registers and SP are stored
+// while a guest is running. The assembly switch code writes here and
+// the exception vector restores from it when returning to C.
+u64 host_saved_area[16];
+
 #define VCPU_SCHED_MAX 8
 static vcpu_t* sched_runqueue[VCPU_SCHED_MAX];
 static size_t sched_len;
@@ -87,7 +92,20 @@ void vcpu_run(vcpu_t* vcpu)
     if (!vcpu)
         return;
     vcpu_scheduler_set_current(vcpu);
-    world_switch(NULL, vcpu);
+    
+    while (1) {
+        vcpu_t *current = vcpu_scheduler_current();
+        if (!current) break;
+
+        // Run the guest. This returns when the guest traps.
+        world_switch(NULL, current);
+
+        // Check if the guest requested a yield (e.g. WFI)
+        if (current->request_yield) {
+            current->request_yield = false;
+            vcpu_scheduler_yield();
+        }
+    }
 }
 
 static void save_fp(vcpu_t *vcpu)
