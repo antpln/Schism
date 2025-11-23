@@ -32,7 +32,7 @@ static inline uint64_t vtcr_el2_value(void)
 {
     // VTCR_EL2 is the Stage-2 Translation Control Register for EL2.
     // VTCR_EL2 configuration:
-    // - T0SZ=24 (40-bit IPA space)
+    // - T0SZ=64-IPA_BITS (39-bit IPA space with IPA_BITS=39)
     // - SL0=1 (starting level 1 for Stage-2)
     // - ORGN0=1, IRGN0=1 (Write-Back Read/Write Allocate - WBWA)
     // - SH0=3 (Inner Shareable)
@@ -42,7 +42,7 @@ static inline uint64_t vtcr_el2_value(void)
     const uint64_t IRGN0_WB= 0b1ull  << 8;   // VTCR_EL2.IRGN0 -> Inner WBWA
     const uint64_t SL0_L1  = 0b01ull << 6;   // VTCR_EL2.SL0 -> start walk at level 1
     const uint64_t PS_48   = 0b101ull<< 16;  // VTCR_EL2.PS  -> 48-bit physical address range
-    const uint64_t T0SZ    = (64 - IPA_BITS); // VTCR_EL2.T0SZ -> IPA size (40 bits)
+    const uint64_t T0SZ    = (64 - IPA_BITS); // VTCR_EL2.T0SZ -> IPA size (39 bits here)
     return TG0_4K | SH0_IS | ORGN0_WB | IRGN0_WB | SL0_L1 | T0SZ | PS_48;
 }
 

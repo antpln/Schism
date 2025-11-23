@@ -3,7 +3,7 @@
 #include "mem_attrs.h"
 
 // Number of bits used for the Intermediate Physical Address (IPA) in Stage-2
-// translations. 40b IPA -> 1 TB IPA space, common on many ARMv8 systems.
+// translations. 39b IPA -> 512 GiB IPA space on the QEMU virt platform.
 #define IPA_BITS 39 // IPA width used by Stage-2 (guest-physical) addresses
 
 // VMID used in VTTBR_EL2 to tag Stage-2 translations for a given guest VM.

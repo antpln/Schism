@@ -37,7 +37,7 @@ typedef struct vcpu_arch
     struct {
         u64 lrs[16]; // List Registers for Virtualization
         u32 vmcr;   // Virtualization Miscellaneous Control Register
-        u32 apr;   // Virtualization Address Space Identifier Register
+        u32 apr;   // Active Priority Register (AP0R0) for the VGIC
     } vgic; // Virtual Generic Interrupt Controller
 
     trapframe_t tf; // Guest register state
