@@ -1,7 +1,7 @@
 Schism
 ======
 
-Schism is a teaching-oriented AArch64 hypervisor that targets QEMU's
+Schism is a learning-oriented AArch64 hypervisor that targets QEMU's
 `virt` machine.  It expects to boot at EL2, brings up a minimal stage-1 MMU,
 builds an identity-mapped stage-2 address space, and time-slices two toy guest
 OSes that inhabit the guest physical window beginning at `0x4000_0000`.
