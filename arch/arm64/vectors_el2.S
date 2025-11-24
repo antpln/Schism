@@ -10,14 +10,37 @@ el2_vectors:
   .align 7
   .global \label
 \label: 
-    str x16, [sp, #-16]!                // preserve x16 before using as scratch
+    str x16, [sp, #-16]!                // preserve guest x16
+    mov x16, #\code                     // stash vector code in x16 (guest x16 already saved)
+    b   el2_vector_common               // jump to out-of-line handler to keep slot small
+.endm
+
+SLOT el2_sync_sp0,   0x00
+SLOT el2_irq_sp0,    0x01
+SLOT el2_fiq_sp0,    0x02
+SLOT el2_serr_sp0,   0x03
+SLOT el2_sync_spx,   0x10
+SLOT el2_irq_spx,    0x11
+SLOT el2_fiq_spx,    0x12
+SLOT el2_serr_spx,   0x13
+SLOT el2_sync_a64,   0x20
+SLOT el2_irq_a64,    0x21
+SLOT el2_fiq_a64,    0x22
+SLOT el2_serr_a64,   0x23
+SLOT el2_sync_a32,   0x30
+SLOT el2_irq_a32,    0x31
+SLOT el2_fiq_a32,    0x32
+SLOT el2_serr_a32,   0x33
+
+el2_vector_common:
+    str x16, [sp, #-16]!                // push vector code; guest x16 is underneath
     adrp x16, current_trapframe
     ldr x16, [x16, :lo12:current_trapframe]
     cbz x16, 2f                         // skip save if no trapframe requested
 
     // At this point x16 holds the pointer to the trapframe that should capture
     // the outgoing guest state. All guest GPRs are still live in x0-x30, with
-    // the original x16 stored on the stack. We emit paired stores directly to
+    // the original x16 stored two slots below on the stack. We emit paired stores directly to
     // the trapframe so the expensive path runs only when a world-switch is in
     // flight.
     stp x0, x1, [x16, #(8 * 0)]
@@ -29,7 +52,7 @@ el2_vectors:
     stp x12, x13, [x16, #(8 * 12)]
     stp x14, x15, [x16, #(8 * 14)]
 
-    ldr x0, [sp]                         // recover original x16 value
+    ldr x0, [sp, #16]                    // recover original x16 value (below saved code)
     stp x0, x17, [x16, #(8 * 16)]
     stp x18, x19, [x16, #(8 * 18)]
     stp x20, x21, [x16, #(8 * 20)]
@@ -50,14 +73,16 @@ el2_vectors:
     adrp x1, current_trapframe
     str xzr, [x1, :lo12:current_trapframe]
 
-2:  ldr x16, [sp]
-    add sp, sp, #16
+2:  ldr x4, [sp]                       // recover vector code
+    add sp, sp, #16                    // pop saved code
+    ldr x16, [sp]                      // restore guest x16 value
+    add sp, sp, #16                    // pop guest x16
 
     mrs x0, esr_el2 // read exception syndrome register
     mrs x1, elr_el2 // read exception link register
     mrs x2, spsr_el2 // read saved program status register
     mrs x3, far_el2 // read fault address register
-    mov x4, #\code // pass code identifying the exception type
+    // x4 holds the exception code corresponding to the slot
     bl el2_exception_common
 
     // After the C handler returns, restore host callee-saved registers
@@ -73,21 +98,3 @@ el2_vectors:
     ldr x1, [x2, #96]
     mov sp, x1
     ret
-.endm
-
-SLOT el2_sync_sp0,   0x00
-SLOT el2_irq_sp0,    0x01
-SLOT el2_fiq_sp0,    0x02
-SLOT el2_serr_sp0,   0x03
-SLOT el2_sync_spx,   0x10
-SLOT el2_irq_spx,    0x11
-SLOT el2_fiq_spx,    0x12
-SLOT el2_serr_spx,   0x13
-SLOT el2_sync_a64,   0x20
-SLOT el2_irq_a64,    0x21
-SLOT el2_fiq_a64,    0x22
-SLOT el2_serr_a64,   0x23
-SLOT el2_sync_a32,   0x30
-SLOT el2_irq_a32,    0x31
-SLOT el2_fiq_a32,    0x32
-SLOT el2_serr_a32,   0x33
