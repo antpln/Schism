@@ -37,13 +37,27 @@ static void memclr(void* ptr, size_t bytes)
 static void vcpu_init_slot(vcpu_t* vcpu, int id, u64 entry, u64 stack, u64 vttbr_snapshot)
 {
     memclr(vcpu, sizeof(*vcpu));
+    vcpu->arch.cntvoff_el2 = 0;
+    asm volatile("mrs %0, TTBR0_EL1" : "=r"(vcpu->arch.tf.ttbr0_el1));
+    asm volatile("mrs %0, TTBR1_EL1" : "=r"(vcpu->arch.tf.ttbr1_el1));
+    asm volatile("mrs %0, TCR_EL1" : "=r"(vcpu->arch.tf.tcr_el1));
+    asm volatile("mrs %0, SCTLR_EL1" : "=r"(vcpu->arch.tf.sctlr_el1));
+    asm volatile("mrs %0, TPIDR_EL1" : "=r"(vcpu->arch.tf.tpidr_el1));
+    asm volatile("mrs %0, CNTKCTL_EL1" : "=r"(vcpu->arch.tf.cntkctl_el1));
+    asm volatile("mrs %0, CNTP_CTL_EL0" : "=r"(vcpu->arch.tf.cntp_ctl_el0));
+    asm volatile("mrs %0, CNTP_CVAL_EL0" : "=r"(vcpu->arch.tf.cntp_cval_el0));
+    vcpu->arch.tf.cntp_cval_el0 += vcpu->arch.cntvoff_el2;
+    asm volatile("mrs %0, CNTV_CTL_EL0" : "=r"(vcpu->arch.tf.cntv_ctl_el0));
+    asm volatile("mrs %0, CNTV_CVAL_EL0" : "=r"(vcpu->arch.tf.cntv_cval_el0));
     vcpu->arch.tf.elr_el1 = entry;
     vcpu->arch.tf.sp_el1 = stack;
     vcpu->arch.tf.regs[0] = (u64)id;
     const u64 SPSR_EL1H = 0x5ull | (0xFull << 6);
     vcpu->arch.tf.spsr_el1 = SPSR_EL1H;
     vcpu->arch.vttbr_el2 = vttbr_snapshot;
-    vcpu->arch.cntvoff_el2 = 0;
+    u64 cntpct;
+    asm volatile("mrs %0, CNTPCT_EL0" : "=r"(cntpct));
+    vcpu->arch.cntvct_el0 = cntpct; // start virtual counter aligned with physical
     vcpu->vcpu_id = id;
 }
 
@@ -87,7 +101,7 @@ void el2_main(void){
     s2_program_regs_and_enable();
     console_puts("EL2: Stage-2 MMU enabled.\n");
 
-    uint64_t vttbr_snapshot;
+    u64 vttbr_snapshot;
     asm volatile("mrs %0, VTTBR_EL2" : "=r"(vttbr_snapshot));
 
     vcpu_init_slot(&vcpu_pool[0], 0, (u64)guest_counter_os, 0x40080000ull, vttbr_snapshot);

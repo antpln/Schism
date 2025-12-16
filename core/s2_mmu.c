@@ -28,7 +28,7 @@ static s2_l2_table_t* s2_l1_children[S2_PT_ENTRIES];
 static u16 s2_l2_used;
 static u16 s2_l3_used;
 
-static inline uint64_t vtcr_el2_value(void)
+static inline u64 vtcr_el2_value(void)
 {
     // VTCR_EL2 is the Stage-2 Translation Control Register for EL2.
     // VTCR_EL2 configuration:
@@ -36,13 +36,13 @@ static inline uint64_t vtcr_el2_value(void)
     // - SL0=1 (starting level 1 for Stage-2)
     // - ORGN0=1, IRGN0=1 (Write-Back Read/Write Allocate - WBWA)
     // - SH0=3 (Inner Shareable)
-    const uint64_t TG0_4K  = 0b00ull << 14;  // VTCR_EL2.TG0 -> 4KB granule for Stage-2
-    const uint64_t SH0_IS  = 0b11ull << 12;  // VTCR_EL2.SH0 -> Inner Shareable
-    const uint64_t ORGN0_WB= 0b1ull  << 10;  // VTCR_EL2.ORGN0 -> Outer WBWA
-    const uint64_t IRGN0_WB= 0b1ull  << 8;   // VTCR_EL2.IRGN0 -> Inner WBWA
-    const uint64_t SL0_L1  = 0b01ull << 6;   // VTCR_EL2.SL0 -> start walk at level 1
-    const uint64_t PS_48   = 0b101ull<< 16;  // VTCR_EL2.PS  -> 48-bit physical address range
-    const uint64_t T0SZ    = (64 - IPA_BITS); // VTCR_EL2.T0SZ -> IPA size (39 bits here)
+    const u64 TG0_4K  = 0b00ull << 14;  // VTCR_EL2.TG0 -> 4KB granule for Stage-2
+    const u64 SH0_IS  = 0b11ull << 12;  // VTCR_EL2.SH0 -> Inner Shareable
+    const u64 ORGN0_WB= 0b1ull  << 10;  // VTCR_EL2.ORGN0 -> Outer WBWA
+    const u64 IRGN0_WB= 0b1ull  << 8;   // VTCR_EL2.IRGN0 -> Inner WBWA
+    const u64 SL0_L1  = 0b01ull << 6;   // VTCR_EL2.SL0 -> start walk at level 1
+    const u64 PS_48   = 0b101ull<< 16;  // VTCR_EL2.PS  -> 48-bit physical address range
+    const u64 T0SZ    = (64 - IPA_BITS); // VTCR_EL2.T0SZ -> IPA size (39 bits here)
     return TG0_4K | SH0_IS | ORGN0_WB | IRGN0_WB | SL0_L1 | T0SZ | PS_48;
 }
 
@@ -197,21 +197,21 @@ void s2_program_regs_and_enable(void)
 {
     WR("MAIR_EL2", MAIR_EL2_VALUE);   // Stage-2 memory attributes (AttrIndx -> Normal WBRWA / Device)
     WR("VTCR_EL2", vtcr_el2_value()); // Stage-2 translation control (granule/shareability/cacheability)
-    const uint64_t VMID_SHIFT = 48;
+    const u64 VMID_SHIFT = 48;
 
     // Check CPU features to determine VMID size (8 or 16 bits)
-    uint16_t mask;
+    u16 mask;
     {
-        uint64_t mmfr1;
+        u64 mmfr1;
         asm volatile("mrs %0, ID_AA64MMFR1_EL1" : "=r"(mmfr1));
-        uint64_t vmidbits = (mmfr1 >> 4) & 0xF;     // VMIDBits
+        u64 vmidbits = (mmfr1 >> 4) & 0xF;     // VMIDBits
         mask = (vmidbits == 0x2) ? 0xFFFFu : 0xFFu; // FEAT_VMID16 ?
     }
-    uint64_t vmid_field = ((uint64_t)(VMID & mask)) << VMID_SHIFT; // VMID -> [63:48]
+    u64 vmid_field = ((u64)(VMID & mask)) << VMID_SHIFT; // VMID -> [63:48]
     uintptr_t l1_base = (uintptr_t)s2_l1;                          // 4KB-aligned L1 table base
-    uint64_t baddr_field = ((uint64_t)l1_base) & PA_48_MASK;       // Table base PA -> bits [47:0]
+    u64 baddr_field = ((u64)l1_base) & PA_48_MASK;       // Table base PA -> bits [47:0]
 
-    uint64_t vttbr = vmid_field | baddr_field;                // Combine VMID and base address
+    u64 vttbr = vmid_field | baddr_field;                // Combine VMID and base address
     WR("VTTBR_EL2", vttbr);                                   // Stage-2 translation table base register
     asm volatile("dsb ish; tlbi vmalls12e1is; dsb ish; isb"); // Barrier + invalidate guest/host Stage-1/2 TLBs
 
@@ -223,38 +223,47 @@ void s2_program_regs_and_enable(void)
      * Below it is read, updated, and written back to enable S2 and desired traps.
      */
 
-    uint64_t hcr;
+    u64 hcr;
     asm volatile("mrs %0, HCR_EL2" : "=r"(hcr)); // Read current HCR_EL2.
-    uint64_t vm = (1ull << 0);                   // HCR_EL2.VM  -> enable Stage-2 translation
-    uint64_t rw = (1ull << 31);                  // HCR_EL2.RW  -> force guest EL1 into AArch64
-    uint64_t twe = (1ull << 14);                 // HCR_EL2.TWE -> trap guest WFE to EL2
-    uint64_t twi = (1ull << 13);                 // HCR_EL2.TWI -> trap guest WFI to EL2
-    uint64_t tsc = (1ull << 19);                 // HCR_EL2.TSC -> trap guest SMC instructions
-    uint64_t fmo = (1ull << 3);                  // HCR_EL2.FMO -> route physical FIQs to EL2
-    uint64_t imo = (1ull << 4);                  // HCR_EL2.IMO -> route physical IRQs to EL2
-    uint64_t amo = (1ull << 5);                  // HCR_EL2.AMO -> route SError/async aborts to EL2
+    u64 vm = (1ull << 0);                   // HCR_EL2.VM  -> enable Stage-2 translation
+    u64 rw = (1ull << 31);                  // HCR_EL2.RW  -> force guest EL1 into AArch64
+    u64 twe = (1ull << 14);                 // HCR_EL2.TWE -> trap guest WFE to EL2
+    u64 twi = (1ull << 13);                 // HCR_EL2.TWI -> trap guest WFI to EL2
+    u64 tsc = (1ull << 19);                 // HCR_EL2.TSC -> trap guest SMC instructions
+    u64 fmo = (1ull << 3);                  // HCR_EL2.FMO -> route physical FIQs to EL2
+    u64 imo = (1ull << 4);                  // HCR_EL2.IMO -> route physical IRQs to EL2
+    u64 amo = (1ull << 5);                  // HCR_EL2.AMO -> route SError/async aborts to EL2
     hcr |= vm | rw | twe | twi | tsc | fmo | imo | amo;
     WR("HCR_EL2", hcr); // Enable Stage-2 translations with the selected traps
     asm volatile("dsb ish; tlbi vmalls12e1is; dsb ish; isb"); // Flush guest TLBs after toggling VM bit
+
+    /*
+     * CNTHCTL_EL2 controls which timer/counter system registers EL1 can access
+     * directly. Keep physical counter/timer accesses trapped (EL1PCTEN/EL1PCEN
+     * cleared) so we can virtualize time with CNTVOFF_EL2 and software
+     * emulation. Virtual timer/counter accesses remain usable.
+     */
+    const u64 trap_physical_timers = 0; // EL1PCEN=0, EL1PCTEN=0
+    WR("CNTHCTL_EL2", trap_physical_timers);
 }
 
 // Helper function to determine VMID mask based on CPU features
-static inline uint16_t vmid_mask_from_cpu(void)
+static inline u16 vmid_mask_from_cpu(void)
 {
-    uint64_t mmfr1;
+    u64 mmfr1;
     asm volatile("mrs %0, ID_AA64MMFR1_EL1" : "=r"(mmfr1));
-    uint64_t vmidbits = (mmfr1 >> 4) & 0xF;     // VMIDBits field
+    u64 vmidbits = (mmfr1 >> 4) & 0xF;     // VMIDBits field
     return (vmidbits == 0x2) ? 0xFFFFu : 0xFFu; // 16 or 8 bits
 }
 
 // This function sets up the necessary registers and transitions from EL2 to EL1
-void enter_el1_at(void (*el1_pc)(void), uint64_t sp_el1)
+void enter_el1_at(void (*el1_pc)(void), u64 sp_el1)
 {
 
     asm volatile("msr SP_EL1, %0" ::"r"(sp_el1) : "memory"); // Program SP_EL1 for the guest
-    const uint64_t EL1h = 0x5ull;         // SPSR_EL2.M bits -> return to EL1h
-    const uint64_t DAIF = 0xFull << 6;    // SPSR_EL2.DAIF -> mask IRQ/FIQ/SError/Debug
+    const u64 EL1h = 0x5ull;         // SPSR_EL2.M bits -> return to EL1h
+    const u64 DAIF = 0xFull << 6;    // SPSR_EL2.DAIF -> mask IRQ/FIQ/SError/Debug
     WR("SPSR_EL2", EL1h | DAIF);          // Save return state + interrupt mask
-    WR("ELR_EL2", (uint64_t)el1_pc);      // Link register for eret -> guest entry PC
+    WR("ELR_EL2", (u64)el1_pc);      // Link register for eret -> guest entry PC
     asm volatile("isb; eret");            // Synchronize and drop to EL1
 }

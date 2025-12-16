@@ -9,6 +9,9 @@ enum
     COUNTER_SLOT_REGION = 3,
     COUNTER_SLOT_COUNTER = 4,
     COUNTER_SLOT_ITER = 5,
+    COUNTER_SLOT_TIME_BEFORE = 12,
+    COUNTER_SLOT_TIME_AFTER = 13,
+    COUNTER_SLOT_TIME_TARGET = 14,
 };
 
 static void run_isolation_tests(u64 guest_id)
@@ -34,6 +37,20 @@ void guest_counter_os(u64 guest_id)
         guest_task_counter(guest_id, &result);
         guest_log_value(COUNTER_SLOT_COUNTER, result.data0);
         guest_log_value(COUNTER_SLOT_ITER, iteration);
+
+        if (iteration == 8)
+        {
+            u64 before = guest_read_counter();
+            u64 target = before + 0x100000ull;
+            guest_log_value(COUNTER_SLOT_TIME_BEFORE, before);
+            guest_log_value(COUNTER_SLOT_TIME_TARGET, target);
+            guest_set_virtual_time(target);
+            u64 after = guest_read_counter();
+            guest_log_value(COUNTER_SLOT_TIME_AFTER, after);
+            result.time_before = before;
+            result.time_target = target;
+            result.time_after = after;
+        }
 
         guest_task_report(guest_id, &result);
 

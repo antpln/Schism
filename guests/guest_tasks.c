@@ -15,6 +15,10 @@ void guest_task_counter(u64 guest_id, struct guest_task_result *out)
     const u64 sample_counter = guest_read_counter();
     out->data0 = sample_counter;
     out->data1 = (u64)guest_private_region(guest_id);
+    out->time_before = 0;
+    out->time_after = 0;
+    out->time_target = 0;
+    out->memwalk_time = 0;
     copy_desc(out, "counter task");
 }
 
@@ -31,13 +35,17 @@ void guest_task_memwalk(u64 guest_id, struct guest_task_result *out)
     out->id = guest_id;
     out->data0 = checksum;
     out->data1 = (u64)region;
+    out->time_before = 0;
+    out->time_after = 0;
+    out->time_target = 0;
+    out->memwalk_time = guest_read_counter();
 
     copy_desc(out, "memwalk task");
 }
 
 void guest_task_report(u64 guest_id, const struct guest_task_result *out)
 {
-    register uint64_t x0 asm("x0") = guest_id;
-    register uint64_t x1 asm("x1") = (uint64_t)out;
+    register u64 x0 asm("x0") = guest_id;
+    register u64 x1 asm("x1") = (u64)out;
     asm volatile("hvc #0x60" : "+r"(x0), "+r"(x1) :: "memory");
 }

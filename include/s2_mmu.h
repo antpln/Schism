@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "types.h"
 #include "mem_attrs.h"
 
 // Number of bits used for the Intermediate Physical Address (IPA) in Stage-2
@@ -28,8 +29,10 @@
 
 #define S2_VM_GUARD_BYTES     (2ull * 0x1000ull) // 8KB guard between VM slots
 
-void s2_build_tables_identity(uint64_t ipa_base, uint64_t pa_base, uint64_t vm_size,
-                              uint32_t vm_count, uint64_t guard_bytes,
+void s2_build_tables_identity(u64 ipa_base, u64 pa_base, u64 vm_size,
+                              u32 vm_count, u64 guard_bytes,
                               uint8_t read, uint8_t write, uint8_t exec);
+// Program EL2 stage-2 translation registers (MAIR/VTCR/VTTBR/HCR/CNTHCTL) and enable S2 MMU.
 void s2_program_regs_and_enable(void);
-void enter_el1_at(void (*el1_pc)(void), uint64_t sp_el1);
+// Switch from EL2 to EL1 at the given PC/SP with the current trap/s2 configuration.
+void enter_el1_at(void (*el1_pc)(void), u64 sp_el1);

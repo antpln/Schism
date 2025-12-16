@@ -3,7 +3,7 @@
 
 #define GUEST_SHARED_BASE        0x41000000ull
 #define GUEST_SHARED_STRIDE      0x00001000ull
-#define GUEST_SHARED_SLOT_COUNT  12
+#define GUEST_SHARED_SLOT_COUNT  16
 
 #define GUEST_WORK_BASE          0x42000000ull
 #define GUEST_WORK_SIZE          0x00001000ull

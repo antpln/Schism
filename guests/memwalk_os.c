@@ -10,6 +10,7 @@ enum
     MEMWALK_SLOT_REGION = 9,
     MEMWALK_SLOT_CHECKSUM = 10,
     MEMWALK_SLOT_SEED = 11,
+    MEMWALK_SLOT_TIME = 15,
 };
 
 static void run_isolation_tests(u64 guest_id, volatile u64 *region)
@@ -41,11 +42,11 @@ void guest_memwalk_os(u64 guest_id)
             checksum ^= value;
         }
 
-        guest_log_value(MEMWALK_SLOT_CHECKSUM, checksum);
-        guest_log_value(MEMWALK_SLOT_SEED, seed);
-
         struct guest_task_result result;
         guest_task_memwalk(guest_id, &result);
+        guest_log_value(MEMWALK_SLOT_CHECKSUM, checksum);
+        guest_log_value(MEMWALK_SLOT_SEED, seed);
+        guest_log_value(MEMWALK_SLOT_TIME, result.memwalk_time);
         guest_task_report(guest_id, &result);
         
         seed += 0x111111111ull;

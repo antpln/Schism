@@ -25,6 +25,27 @@ vcpu_switch_asm:
 	msr SPSR_EL2, x1    // restore SPSR_EL2
 	isb
 
+	ldp x1, x2, [x0, #(8 * 34)]    // restore TTBR0/1_EL1
+	msr TTBR0_EL1, x1
+	msr TTBR1_EL1, x2
+	ldp x1, x2, [x0, #(8 * 36)]    // restore TCR_EL1 and SCTLR_EL1
+	msr TCR_EL1, x1
+	msr SCTLR_EL1, x2
+	ldp x1, x2, [x0, #(8 * 38)]    // restore TPIDR_EL1 and CNTKCTL_EL1
+	msr TPIDR_EL1, x1
+	msr CNTKCTL_EL1, x2
+	ldp x1, x2, [x0, #(8 * 40)]    // restore CNTP_CTL/CVAL_EL0 (CVAL is virtual)
+	mrs x3, CNTVOFF_EL2
+	sub x2, x2, x3                 // convert virtual CVAL to physical counter domain
+	and x1, x1, #0x3
+	msr CNTP_CVAL_EL0, x2
+	msr CNTP_CTL_EL0, x1
+	ldp x1, x2, [x0, #(8 * 42)]    // restore CNTV_CTL/CVAL_EL0
+	and x1, x1, #0x3
+	msr CNTV_CVAL_EL0, x2
+	msr CNTV_CTL_EL0, x1
+	isb
+
 	// Restore guest general-purpose registers x1..x30 from trapframe
 	ldp x1, x2, [x0, #(8 * 1)]        // restore general-purpose registers
 	ldp x3, x4, [x0, #(8 * 3)]

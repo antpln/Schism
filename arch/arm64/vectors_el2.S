@@ -69,6 +69,24 @@ el2_vector_common:
     mrs x0, SPSR_EL2
     str x0, [x16, #(8 * 33)]
 
+    mrs x0, TTBR0_EL1
+    mrs x1, TTBR1_EL1
+    stp x0, x1, [x16, #(8 * 34)]
+    mrs x0, TCR_EL1
+    mrs x1, SCTLR_EL1
+    stp x0, x1, [x16, #(8 * 36)]
+    mrs x0, TPIDR_EL1
+    mrs x1, CNTKCTL_EL1
+    stp x0, x1, [x16, #(8 * 38)]
+    mrs x0, CNTP_CTL_EL0
+    mrs x1, CNTP_CVAL_EL0
+    mrs x2, CNTVOFF_EL2
+    add x1, x1, x2                   // store CNTP_CVAL as a virtual count
+    stp x0, x1, [x16, #(8 * 40)]
+    mrs x0, CNTV_CTL_EL0
+    mrs x1, CNTV_CVAL_EL0
+    stp x0, x1, [x16, #(8 * 42)]
+
     // Clear the latch so subsequent traps skip the heavy save path
     adrp x1, current_trapframe
     str xzr, [x1, :lo12:current_trapframe]
@@ -83,6 +101,7 @@ el2_vector_common:
     mrs x2, spsr_el2 // read saved program status register
     mrs x3, far_el2 // read fault address register
     // x4 holds the exception code corresponding to the slot
+
     bl el2_exception_common
 
     // After the C handler returns, restore host callee-saved registers
@@ -97,4 +116,5 @@ el2_vector_common:
     ldp x29, x30, [x2, #80]
     ldr x1, [x2, #96]
     mov sp, x1
+
     ret

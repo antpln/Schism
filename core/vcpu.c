@@ -6,7 +6,7 @@
 
 // Forward declarations to avoid missing uart_pl011.h dependency.
 void console_puts(const char *s);
-void console_hex64(uint64_t v);
+void console_hex64(u64 v);
 
 extern void vcpu_switch_asm(trapframe_t *tf);
 void world_switch(vcpu_t *from, vcpu_t *to);
@@ -136,7 +136,7 @@ static void save_fp(vcpu_t *vcpu)
         : "r"(base)
         : "memory");
 
-    uint64_t tmp;
+    u64 tmp;
     asm volatile("mrs %0, FPCR" : "=r"(tmp)); // Read FPCR (Floating Point Control Register)
     vcpu->arch.fp.fpcr = (u32)tmp;
     asm volatile("mrs %0, FPSR" : "=r"(tmp)); // Read FPSR (Floating Point Status Register)
@@ -172,7 +172,7 @@ static void restore_fp(vcpu_t *vcpu)
         : "r"(base)
         : "memory");
 
-    uint64_t tmp = vcpu->arch.fp.fpcr;
+    u64 tmp = vcpu->arch.fp.fpcr;
     asm volatile("msr FPCR, %0" : : "r"(tmp));
     tmp = vcpu->arch.fp.fpsr;
     asm volatile("msr FPSR, %0" : : "r"(tmp));
@@ -266,7 +266,7 @@ static void restore_pauth(vcpu_t *vcpu)
 
 static size_t vgic_detect_lr_count(void)
 {
-    uint64_t vtr;
+    u64 vtr;
     asm volatile("mrs %0, " ICH_VTR_SYSREG : "=r"(vtr));
     size_t count = (size_t)((vtr & 0xfu) + 1u);
     if (count > VGIC_LR_CAPACITY)
@@ -310,11 +310,11 @@ static void save_vgic(vcpu_t *vcpu)
     SAVE_VGIC_LR_IF(14, lr_count);
     SAVE_VGIC_LR_IF(15, lr_count);
 
-    uint64_t tmp;
+    u64 tmp;
     asm volatile("mrs %0, " ICH_VMCR_SYSREG : "=r"(tmp)); // Read VMCR (Virtualization Miscellaneous Control Register)
-    vcpu->arch.vgic.vmcr = (uint32_t)tmp;
+    vcpu->arch.vgic.vmcr = (u32)tmp;
     asm volatile("mrs %0, " ICH_AP0R0_SYSREG : "=r"(tmp)); // Read APR (Active Priority Register 0)
-    vcpu->arch.vgic.apr = (uint32_t)tmp;
+    vcpu->arch.vgic.apr = (u32)tmp;
 }
 
 static void restore_vgic(vcpu_t *vcpu)
@@ -341,8 +341,8 @@ static void restore_vgic(vcpu_t *vcpu)
     RESTORE_VGIC_LR_IF(14, lr_count);
     RESTORE_VGIC_LR_IF(15, lr_count);
 
-    asm volatile("msr " ICH_VMCR_SYSREG ", %0" : : "r"((uint64_t)vcpu->arch.vgic.vmcr)); // Restore VMCR
-    asm volatile("msr " ICH_AP0R0_SYSREG ", %0" : : "r"((uint64_t)vcpu->arch.vgic.apr)); // Restore APR
+    asm volatile("msr " ICH_VMCR_SYSREG ", %0" : : "r"((u64)vcpu->arch.vgic.vmcr)); // Restore VMCR
+    asm volatile("msr " ICH_AP0R0_SYSREG ", %0" : : "r"((u64)vcpu->arch.vgic.apr)); // Restore APR
     asm volatile("isb");
 }
 
@@ -353,6 +353,9 @@ void world_switch(vcpu_t *from, vcpu_t *to)
     asm volatile("isb");
     
     if (from) {
+        u64 vct;
+        asm volatile("mrs %0, CNTVCT_EL0" : "=r"(vct));
+        from->arch.cntvct_el0 = vct;
         save_fp(from);
         save_sve(from);
         save_pauth(from);
@@ -366,8 +369,11 @@ void world_switch(vcpu_t *from, vcpu_t *to)
 
     // Update CNTVOFF_EL2 for the target VCPU
     // This register holds the offset to be applied to the virtual timer
-    asm volatile("msr CNTVOFF_EL2, %0" : : "r"(to->arch.cntvoff_el2) : "memory");
-
+    u64 phys_cnt;
+    asm volatile("mrs %0, CNTPCT_EL0" : "=r"(phys_cnt));
+    u64 offset = to->arch.cntvct_el0 - phys_cnt;
+    to->arch.cntvoff_el2 = offset;
+    asm volatile("msr CNTVOFF_EL2, %0" : : "r"(offset) : "memory");
     restore_vgic(to);
     restore_pauth(to);
     restore_sve(to);

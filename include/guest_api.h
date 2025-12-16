@@ -9,6 +9,10 @@ struct guest_task_result
     char desc[32];
     u64 data0;
     u64 data1;
+    u64 time_before;
+    u64 time_after;
+    u64 time_target;
+    u64 memwalk_time;
 };
 
 #endif /* GUEST_API_H */

@@ -8,6 +8,16 @@ typedef struct trapframe
     u64 sp_el1;   // Stack pointer for EL1
     u64 elr_el1;  // Exception Link Register for EL1
     u64 spsr_el1; // Saved Program Status Register for EL1
+    u64 ttbr0_el1;   // Translation table base register 0
+    u64 ttbr1_el1;   // Translation table base register 1
+    u64 tcr_el1;     // Translation control register
+    u64 sctlr_el1;   // System control register
+    u64 tpidr_el1;   // Thread pointer ID register
+    u64 cntkctl_el1; // Timer control register for EL1/EL0 access
+    u64 cntp_ctl_el0;  // Physical timer control (virtualized view)
+    u64 cntp_cval_el0; // Physical timer compare value stored in virtual counts
+    u64 cntv_ctl_el0;  // Virtual timer control
+    u64 cntv_cval_el0; // Virtual timer compare value
 } trapframe_t;
 
 
@@ -16,6 +26,7 @@ typedef struct vcpu_arch
 {
     u64 vttbr_el2;   // Virtualization Translation Table Base Register for EL2
     u64 cntvoff_el2; // Counter-timer Virtual Offset Register for EL2
+    u64 cntvct_el0;  // Last virtual counter snapshot to freeze time when descheduled
 
     // Feature blocks
     struct
@@ -26,7 +37,7 @@ typedef struct vcpu_arch
         u64 vregs[32][2];      // Q0-Q31, two 64-bit lanes per 128-bit register
     } fp; // Floating Point and SIMD state
     struct {
-        u8 used; // TODO
+        u8 used;
     } sve; // Scalable Vector Extension
 
     struct {

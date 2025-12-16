@@ -35,7 +35,7 @@ static inline void guest_delay(unsigned iterations)
 static inline u64 guest_read_counter(void)
 {
     u64 val;
-    asm volatile("mrs %0, cntpct_el0" : "=r"(val));
+    asm volatile("mrs %0, cntvct_el0" : "=r"(val));
     return val;
 }
 
@@ -56,6 +56,12 @@ static inline u64 guest_read_sp(void)
 static inline volatile u64* guest_private_region(u64 guest_id)
 {
     return (volatile u64*)(GUEST_WORK_BASE + guest_id * GUEST_WORK_STRIDE);
+}
+
+static inline void guest_set_virtual_time(u64 virtual_cnt)
+{
+    register u64 x0 asm("x0") = virtual_cnt;
+    asm volatile("hvc #0x61" : "+r"(x0) :: "memory");
 }
 
 extern void guest_counter_os(u64 guest_id);
